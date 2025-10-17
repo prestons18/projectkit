@@ -1,0 +1,14 @@
+[package]
+name = "projectkit"
+version = "0.1.0"
+edition = "2024"
+
+[workspace]
+members = [
+    "crates/*",
+]
+
+[workspace.dependencies]
+orm = { path = "../orm" }
+
+[dependencies]
