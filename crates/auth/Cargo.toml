@@ -4,3 +4,14 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+argon2 = { version = "0.5.3", features = ["std"] }
+jsonwebtoken = "9.3.0"
+serde = { version = "1.0.228", features = ["derive"] }
+thiserror = "2.0.17"
+chrono = { version = "0.4.42", features = ["serde"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
+orm = { workspace = true }
+async-trait = "0.1.89"
+
+[dev-dependencies]
+tokio = { version = "1.48.0", features = ["full"] }
