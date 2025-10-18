@@ -44,7 +44,7 @@ The server will start on the configured host and port (default: `http://0.0.0.0:
 ### Authentication
 
 #### POST /auth/signup
-Register a new user.
+Register a new user with the default `user` role.
 
 **Request:**
 ```json
@@ -64,6 +64,8 @@ Register a new user.
   }
 }
 ```
+
+**Note:** The JWT token includes role information. Regular users get the `user` role by default.
 
 #### POST /auth/login
 Login an existing user.
@@ -86,6 +88,40 @@ Login an existing user.
   }
 }
 ```
+
+#### POST /auth/service-account
+Create a service account with the `service` role. **Requires authentication with an existing service account.**
+
+**Request:**
+```bash
+curl -X POST http://localhost:3000/auth/service-account \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <SERVICE_ACCOUNT_TOKEN>" \
+  -d '{
+    "email": "service@example.com",
+    "password": "securepassword"
+  }'
+```
+
+**Response (201 Created):**
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIs...",
+  "user": {
+    "id": 2,
+    "email": "service@example.com"
+  }
+}
+```
+
+**Error Response (403 Forbidden):**
+```json
+{
+  "error": "Access denied. Service role required to create service accounts."
+}
+```
+
+**Note:** Only existing service accounts can create new service accounts. The first service account must be created directly in the database.
 
 ### Database Operations
 
@@ -150,10 +186,43 @@ let user = User::query(backend)
     .await?;
 ```
 
+## Role-Based Access Control
+
+Project Kit supports two user roles:
+
+### Roles
+
+- **`user`** - Regular users with basic permissions (default for signup)
+- **`service`** - Service accounts for API-to-API communication with elevated privileges
+
+### Using Roles in Requests
+
+All authenticated requests include the user's role in the JWT token. The token is validated on each request.
+
+**Example authenticated request:**
+```bash
+curl http://localhost:3000/db/users \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIs..."
+```
+
+### Protected Routes
+
+Routes can be protected with role-based middleware:
+- Some routes may require the `user` role
+- Some routes may require the `service` role
+- Some routes may accept any authenticated user
+
+If you don't have the required role, you'll receive a `403 Forbidden` response:
+```json
+{
+  "error": "Access denied. Required role: Service"
+}
+```
+
 ## Database Setup
 
 The server automatically runs migrations on startup, creating the necessary tables:
-- `users` - For authentication
+- `users` - For authentication (includes role column)
 - `posts` - Example table with foreign key to users
 - `migrations` - Tracks applied migrations
 
@@ -169,6 +238,7 @@ CREATE TABLE users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     email TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'user',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -184,6 +254,27 @@ CREATE TABLE sessions (
 );
 ```
 
+### Creating the First Service Account
+
+Since only service accounts can create other service accounts, you need to create the first one manually:
+
+```bash
+# Using sqlite3 CLI
+sqlite3 projectkit.db
+
+# Insert a service account (you'll need to hash the password first)
+INSERT INTO users (email, password_hash, role, created_at, updated_at)
+VALUES (
+  'admin@example.com',
+  '<bcrypt_hash_of_password>',
+  'service',
+  datetime('now'),
+  datetime('now')
+);
+```
+
+Alternatively, temporarily modify the signup handler to create a service account, then revert the change.
+
 ## Error Responses
 
 All errors return JSON with an `error` field:
@@ -196,5 +287,6 @@ All errors return JSON with an `error` field:
 
 Common status codes:
 - `400 Bad Request`: Invalid input
-- `401 Unauthorized`: Authentication failed
+- `401 Unauthorized`: Authentication failed or missing token
+- `403 Forbidden`: Insufficient permissions (wrong role)
 - `500 Internal Server Error`: Server or database error

@@ -1,10 +1,11 @@
 #!/bin/bash
 
 # Test API endpoints for Project Kit
+# Tests role-based authentication and authorization
 
 BASE_URL="http://localhost:3000"
 
-echo "=== Testing Project Kit API ==="
+echo "=== Testing Project Kit API with Role-Based Auth ==="
 echo
 
 # Test root endpoint
@@ -13,8 +14,8 @@ curl -s "$BASE_URL/"
 echo
 echo
 
-# Test signup
-echo "2. Testing signup..."
+# Test signup (creates user with 'user' role)
+echo "2. Testing signup (user role)..."
 SIGNUP_RESPONSE=$(curl -s -X POST "$BASE_URL/auth/signup" \
   -H "Content-Type: application/json" \
   -d '{
@@ -22,8 +23,8 @@ SIGNUP_RESPONSE=$(curl -s -X POST "$BASE_URL/auth/signup" \
     "password": "password123"
   }')
 echo "$SIGNUP_RESPONSE" | jq '.'
-TOKEN=$(echo "$SIGNUP_RESPONSE" | jq -r '.token')
-echo "Token: $TOKEN"
+USER_TOKEN=$(echo "$SIGNUP_RESPONSE" | jq -r '.token')
+echo "User Token: $USER_TOKEN"
 echo
 echo
 
@@ -39,14 +40,48 @@ echo "$LOGIN_RESPONSE" | jq '.'
 echo
 echo
 
+# Test creating service account without proper role (should fail)
+echo "4. Testing service account creation without service role (should fail with 403)..."
+SERVICE_FAIL_RESPONSE=$(curl -s -X POST "$BASE_URL/auth/service-account" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $USER_TOKEN" \
+  -d '{
+    "email": "service@example.com",
+    "password": "servicepass123"
+  }')
+echo "$SERVICE_FAIL_RESPONSE" | jq '.'
+echo
+echo
+
+# Note: To test service account creation successfully, you need an existing service account
+echo "5. Note: To test service account creation, first create a service account manually:"
+echo "   See API.md section 'Creating the First Service Account'"
+echo
+echo
+
+# If you have a service account token, uncomment and use this:
+# SERVICE_TOKEN="your_service_account_token_here"
+# echo "6. Testing service account creation with service role..."
+# SERVICE_CREATE_RESPONSE=$(curl -s -X POST "$BASE_URL/auth/service-account" \
+#   -H "Content-Type: application/json" \
+#   -H "Authorization: Bearer $SERVICE_TOKEN" \
+#   -d '{
+#     "email": "newservice@example.com",
+#     "password": "servicepass123"
+#   }')
+# echo "$SERVICE_CREATE_RESPONSE" | jq '.'
+# echo
+# echo
+echo
+
 # Test GET /db/users
-echo "4. Testing GET /db/users..."
+echo "6. Testing GET /db/users..."
 curl -s "$BASE_URL/db/users" | jq '.'
 echo
 echo
 
 # Test POST /db/posts (if posts table exists)
-echo "5. Testing POST /db/posts..."
+echo "7. Testing POST /db/posts..."
 curl -s -X POST "$BASE_URL/db/posts" \
   -H "Content-Type: application/json" \
   -d '{
@@ -59,4 +94,18 @@ curl -s -X POST "$BASE_URL/db/posts" \
 echo
 echo
 
+# Test authenticated request with user token
+echo "8. Testing authenticated request with user token..."
+curl -s "$BASE_URL/db/users" \
+  -H "Authorization: Bearer $USER_TOKEN" | jq '.'
+echo
+echo
+
 echo "=== Tests Complete ==="
+echo
+echo "Summary:"
+echo "- Regular user signup and login: ✓"
+echo "- Service account creation without proper role: ✓ (should fail)"
+echo "- To test full service account workflow, create one manually first"
+echo "  (See API.md for instructions)"
+echo

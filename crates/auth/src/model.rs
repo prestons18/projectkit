@@ -4,27 +4,84 @@ use orm::model::Row;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// User role for authorization
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Role {
+    /// Regular user with basic permissions
+    User,
+    /// Service account for API-to-API communication
+    Service,
+}
+
+impl Role {
+    /// Convert role to string for database storage
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Role::User => "user",
+            Role::Service => "service",
+        }
+    }
+
+    /// Parse role from string
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "user" => Some(Role::User),
+            "service" => Some(Role::Service),
+            _ => None,
+        }
+    }
+}
+
+impl Default for Role {
+    fn default() -> Self {
+        Role::User
+    }
+}
+
 /// User model for authentication
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
     pub id: Option<i64>,
     pub email: String,
     pub password_hash: String,
+    pub role: Role,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
 impl User {
-    /// Create a new user with hashed password
+    /// Create a new user with hashed password and default role
     pub fn new(email: String, password_hash: String) -> Self {
+        Self::new_with_role(email, password_hash, Role::default())
+    }
+
+    /// Create a new user with hashed password and specified role
+    pub fn new_with_role(email: String, password_hash: String, role: Role) -> Self {
         let now = Utc::now();
         Self {
             id: None,
             email,
             password_hash,
+            role,
             created_at: now,
             updated_at: now,
         }
+    }
+
+    /// Check if user has a specific role
+    pub fn has_role(&self, role: Role) -> bool {
+        self.role == role
+    }
+
+    /// Check if user is a service account
+    pub fn is_service(&self) -> bool {
+        self.role == Role::Service
+    }
+
+    /// Check if user is a regular user
+    pub fn is_user(&self) -> bool {
+        self.role == Role::User
     }
 }
 
@@ -48,13 +105,14 @@ impl Model for User {
         }
         map.insert("email".to_string(), Value::String(self.email.clone()));
         map.insert("password_hash".to_string(), Value::String(self.password_hash.clone()));
+        map.insert("role".to_string(), Value::String(self.role.as_str().to_string()));
         map.insert("created_at".to_string(), Value::String(self.created_at.to_rfc3339()));
         map.insert("updated_at".to_string(), Value::String(self.updated_at.to_rfc3339()));
         map
     }
 
     fn columns() -> Vec<&'static str> {
-        vec!["email", "password_hash", "created_at", "updated_at"]
+        vec!["email", "password_hash", "role", "created_at", "updated_at"]
     }
 }
 
@@ -81,6 +139,13 @@ impl FromRow for User {
             })
             .ok_or_else(|| Error::SerializationError("Missing password_hash".to_string()))?;
 
+        let role = row.get("role")
+            .and_then(|v| match v {
+                Value::String(s) => Role::from_str(s),
+                _ => None,
+            })
+            .unwrap_or_default();
+
         let created_at = row.get("created_at")
             .and_then(|v| match v {
                 Value::String(s) => DateTime::parse_from_rfc3339(s.as_str()).ok().map(|dt| dt.with_timezone(&Utc)),
@@ -99,6 +164,7 @@ impl FromRow for User {
             id,
             email,
             password_hash,
+            role,
             created_at,
             updated_at,
         })

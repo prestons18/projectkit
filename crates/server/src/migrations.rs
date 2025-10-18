@@ -23,6 +23,7 @@ impl Migration for CreateUsersTable {
             table.id("id");
             table.string("email", 100);
             table.string("password_hash", 255);
+            table.string("role", 20);
             table.timestamps();
             table.index("idx_users_email", vec!["email".to_string()], true);
         });
@@ -31,6 +32,47 @@ impl Migration for CreateUsersTable {
 
     async fn down(&self, schema: &mut Schema) -> Result<()> {
         schema.drop_table("users");
+        Ok(())
+    }
+}
+
+/// Migration to create sessions table
+struct CreateSessionsTable;
+
+#[async_trait]
+impl Migration for CreateSessionsTable {
+    fn name(&self) -> &str {
+        "create_sessions_table"
+    }
+
+    fn version(&self) -> i64 {
+        20241018_000002
+    }
+
+    async fn up(&self, schema: &mut Schema) -> Result<()> {
+        schema.create_table("sessions", |table| {
+            table.id("id");
+            table.big_integer("user_id");
+            table.string("token", 500);
+            table.string("expires_at", 50);
+            table.string("created_at", 50);
+            
+            table.foreign_key(ForeignKey {
+                column: "user_id".to_string(),
+                references_table: "users".to_string(),
+                references_column: "id".to_string(),
+                on_delete: Some(ForeignKeyAction::Cascade),
+                on_update: None,
+            });
+            
+            table.index("idx_sessions_token", vec!["token".to_string()], true);
+            table.index("idx_sessions_user_id", vec!["user_id".to_string()], false);
+        });
+        Ok(())
+    }
+
+    async fn down(&self, schema: &mut Schema) -> Result<()> {
+        schema.drop_table("sessions");
         Ok(())
     }
 }
@@ -45,7 +87,7 @@ impl Migration for CreatePostsTable {
     }
 
     fn version(&self) -> i64 {
-        20241018_000002
+        20241018_000003
     }
 
     async fn up(&self, schema: &mut Schema) -> Result<()> {
@@ -83,6 +125,7 @@ pub async fn run_migrations(backend: &dyn Backend, dialect: Dialect) -> Result<b
     
     // Add migrations in order
     runner.add_migration(Box::new(CreateUsersTable));
+    runner.add_migration(Box::new(CreateSessionsTable));
     runner.add_migration(Box::new(CreatePostsTable));
     
     // Run pending migrations - this will print output only if migrations are executed

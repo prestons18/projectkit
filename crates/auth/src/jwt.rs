@@ -3,12 +3,15 @@ use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation}
 use serde::{Deserialize, Serialize};
 
 use crate::error::{AuthError, Result};
+use crate::model::Role;
 
 /// JWT Claims structure
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Claims {
     /// Subject (user ID)
     pub sub: String,
+    /// User role
+    pub role: Role,
     /// Issued at (timestamp)
     pub iat: i64,
     /// Expiration time (timestamp)
@@ -16,13 +19,14 @@ pub struct Claims {
 }
 
 impl Claims {
-    /// Create new claims with the given subject and expiration duration in seconds
-    pub fn new(subject: String, expires_in_seconds: i64) -> Self {
+    /// Create new claims with the given subject, role, and expiration duration in seconds
+    pub fn new(subject: String, role: Role, expires_in_seconds: i64) -> Self {
         let now = Utc::now();
         let expiration = now + Duration::seconds(expires_in_seconds);
         
         Self {
             sub: subject,
+            role,
             iat: now.timestamp(),
             exp: expiration.timestamp(),
         }
@@ -38,10 +42,11 @@ impl Claims {
 /// 
 /// # Arguments
 /// * `user_id` - The user identifier
+/// * `role` - The user's role
 /// * `secret` - The secret key for signing the token
 /// * `expires_in_seconds` - Token expiration time in seconds (e.g., 3600 for 1 hour)
-pub fn generate_token(user_id: &str, secret: &str, expires_in_seconds: i64) -> Result<String> {
-    let claims = Claims::new(user_id.to_string(), expires_in_seconds);
+pub fn generate_token(user_id: &str, role: Role, secret: &str, expires_in_seconds: i64) -> Result<String> {
+    let claims = Claims::new(user_id.to_string(), role, expires_in_seconds);
     
     encode(
         &Header::default(),
@@ -82,10 +87,11 @@ mod tests {
         let secret = "test_secret";
         let user_id = "user_123";
         
-        let token = generate_token(user_id, secret, 3600).unwrap();
+        let token = generate_token(user_id, Role::User, secret, 3600).unwrap();
         let claims = validate_token(&token, secret).unwrap();
         
         assert_eq!(claims.sub, user_id);
+        assert_eq!(claims.role, Role::User);
         assert!(!claims.is_expired());
     }
 
@@ -95,7 +101,7 @@ mod tests {
         let wrong_secret = "wrong_secret";
         let user_id = "user_123";
         
-        let token = generate_token(user_id, secret, 3600).unwrap();
+        let token = generate_token(user_id, Role::User, secret, 3600).unwrap();
         let result = validate_token(&token, wrong_secret);
         
         assert!(result.is_err());
@@ -107,7 +113,7 @@ mod tests {
         let user_id = "user_123";
         
         // Create a token that expires in -1 seconds (already expired)
-        let token = generate_token(user_id, secret, -1).unwrap();
+        let token = generate_token(user_id, Role::User, secret, -1).unwrap();
         
         // Wait a moment to ensure expiration
         std::thread::sleep(std::time::Duration::from_millis(100));
@@ -118,9 +124,10 @@ mod tests {
 
     #[test]
     fn test_claims_creation() {
-        let claims = Claims::new("user_456".to_string(), 3600);
+        let claims = Claims::new("user_456".to_string(), Role::Service, 3600);
         
         assert_eq!(claims.sub, "user_456");
+        assert_eq!(claims.role, Role::Service);
         assert!(!claims.is_expired());
         assert!(claims.exp > claims.iat);
     }

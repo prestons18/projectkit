@@ -9,17 +9,58 @@ use serde_json::Value as JsonValue;
 use std::sync::Arc;
 
 use crate::AppState;
+use crate::middleware::AuthUser;
 
 #[derive(Debug, Serialize)]
 pub struct ErrorResponse {
     pub error: String,
 }
+/// Validate table name to prevent SQL injection
+/// Only allows alphanumeric characters and underscores
+fn is_valid_table_name(table: &str) -> bool {
+    if table.is_empty() || table.len() > 64 {
+        return false;
+    }
+    
+    // Must start with a letter or underscore
+    if !table.chars().next().unwrap().is_alphabetic() && !table.starts_with('_') {
+        return false;
+    }
+    
+    // Only allow alphanumeric and underscores
+    table.chars().all(|c| c.is_alphanumeric() || c == '_')
+}
+
+/// List of system tables that should not be directly accessible
+const PROTECTED_TABLES: &[&str] = &["users", "sessions", "migrations"];
+
+fn is_protected_table(table: &str) -> bool {
+    PROTECTED_TABLES.contains(&table)
+}
 
 /// GET /db/:table - Fetch all records from a table
+/// Requires authentication. Service accounts can access all tables, users can only access non-protected tables.
 pub async fn get_table(
     State(state): State<Arc<AppState>>,
     Path(table): Path<String>,
+    AuthUser(user): AuthUser,
 ) -> impl IntoResponse {
+    // Validate table name
+    if !is_valid_table_name(&table) {
+        let error = ErrorResponse {
+            error: format!("Invalid table name: '{}'", table),
+        };
+        return (StatusCode::BAD_REQUEST, Json(error)).into_response();
+    }
+    
+    // Check if table is protected and user doesn't have service role
+    if is_protected_table(&table) && !user.is_service() {
+        let error = ErrorResponse {
+            error: format!("Access denied to protected table '{}'. Service role required.", table),
+        };
+        return (StatusCode::FORBIDDEN, Json(error)).into_response();
+    }
+    
     let backend = state.db.backend();
     
     // Build a simple SELECT * query
@@ -39,11 +80,29 @@ pub async fn get_table(
 }
 
 /// POST /db/:table - Insert a new record into a table
+/// Requires authentication. Service accounts can access all tables, users can only access non-protected tables.
 pub async fn post_table(
     State(state): State<Arc<AppState>>,
     Path(table): Path<String>,
+    AuthUser(user): AuthUser,
     Json(payload): Json<JsonValue>,
 ) -> impl IntoResponse {
+    // Validate table name
+    if !is_valid_table_name(&table) {
+        let error = ErrorResponse {
+            error: format!("Invalid table name: '{}'", table),
+        };
+        return (StatusCode::BAD_REQUEST, Json(error)).into_response();
+    }
+    
+    // Check if table is protected and user doesn't have service role
+    if is_protected_table(&table) && !user.is_service() {
+        let error = ErrorResponse {
+            error: format!("Access denied to protected table '{}'. Service role required.", table),
+        };
+        return (StatusCode::FORBIDDEN, Json(error)).into_response();
+    }
+    
     let backend = state.db.backend();
     
     // Extract columns and values from the JSON payload
@@ -62,6 +121,16 @@ pub async fn post_table(
             error: "Payload cannot be empty".to_string(),
         };
         return (StatusCode::BAD_REQUEST, Json(error)).into_response();
+    }
+    
+    // Validate column names to prevent SQL injection
+    for col in obj.keys() {
+        if !is_valid_table_name(col) {
+            let error = ErrorResponse {
+                error: format!("Invalid column name: '{}'", col),
+            };
+            return (StatusCode::BAD_REQUEST, Json(error)).into_response();
+        }
     }
     
     // Build column names and parameter placeholders

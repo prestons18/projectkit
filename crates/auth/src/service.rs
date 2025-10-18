@@ -1,7 +1,7 @@
 use crate::{
     error::{AuthError, Result},
     jwt::{generate_token, validate_token},
-    model::{Session, User},
+    model::{Session, User, Role},
     password::{hash_password, verify_password},
 };
 use chrono::{Duration, Utc};
@@ -29,12 +29,22 @@ impl AuthService {
         }
     }
 
-    /// Register a new user
+    /// Register a new user with default role (User)
     /// 
     /// # Arguments
     /// * `email` - User's email address
     /// * `password` - User's plain text password (will be hashed)
     pub async fn signup(&self, email: &str, password: &str) -> Result<User> {
+        self.signup_with_role(email, password, Role::User).await
+    }
+
+    /// Register a new user with specified role
+    /// 
+    /// # Arguments
+    /// * `email` - User's email address
+    /// * `password` - User's plain text password (will be hashed)
+    /// * `role` - User's role (User or Service)
+    pub async fn signup_with_role(&self, email: &str, password: &str, role: Role) -> Result<User> {
         // Check if user already exists
         let existing = self.find_user_by_email(email).await?;
         if existing.is_some() {
@@ -44,8 +54,8 @@ impl AuthService {
         // Hash password
         let password_hash = hash_password(password)?;
 
-        // Create user
-        let mut user = User::new(email.to_string(), password_hash);
+        // Create user with specified role
+        let mut user = User::new_with_role(email.to_string(), password_hash, role);
 
         // Insert into database
         let backend = self.db.backend();
@@ -86,12 +96,12 @@ impl AuthService {
             return Err(AuthError::InvalidPassword);
         }
 
-        // Generate JWT token
+        // Generate JWT token with user's role
         let user_id_str = user.id
             .ok_or(AuthError::TokenGenerationError("User has no ID".to_string()))?
             .to_string();
         
-        let token = generate_token(&user_id_str, &self.jwt_secret, self.token_expiry_seconds)?;
+        let token = generate_token(&user_id_str, user.role, &self.jwt_secret, self.token_expiry_seconds)?;
 
         // Optionally store session in database
         let expires_at = Utc::now() + Duration::seconds(self.token_expiry_seconds);
@@ -115,6 +125,7 @@ impl AuthService {
     }
 
     /// Validate a JWT token and return the user
+    /// Also verifies that the role in the token matches the user's current role
     pub async fn validate(&self, token: &str) -> Result<User> {
         // Validate JWT
         let claims = validate_token(token, &self.jwt_secret)?;
@@ -127,7 +138,21 @@ impl AuthService {
         let user = self.find_user_by_id(user_id).await?
             .ok_or(AuthError::InvalidToken)?;
 
+        // Verify role hasn't changed
+        if user.role != claims.role {
+            return Err(AuthError::TokenValidationError(
+                "User role has changed, please login again".to_string()
+            ));
+        }
+
         Ok(user)
+    }
+
+    /// Validate a JWT token and return both the user and claims
+    pub async fn validate_with_claims(&self, token: &str) -> Result<(User, crate::jwt::Claims)> {
+        let claims = validate_token(token, &self.jwt_secret)?;
+        let user = self.validate(token).await?;
+        Ok((user, claims))
     }
 
     /// Logout a user by invalidating their session
