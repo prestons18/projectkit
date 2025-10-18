@@ -1,9 +1,11 @@
 use api::{router, AppState};
 use auth::AuthService;
 use projectkit_core::{AppConfig, Database};
+use storage::{StorageService, TransactionalStorageService};
 use std::sync::Arc;
 
 mod migrations;
+mod seed;
 
 #[tokio::main]
 async fn main() {
@@ -47,8 +49,30 @@ async fn main() {
         config.auth.token_expiry_seconds
     );
     
+    // Seed database with initial data (creates default service account if needed)
+    let _ = seed::seed_database(&auth_service)
+        .await
+        .expect("Failed to seed database");
+    
+    // Initialize storage service
+    let storage_base_path = std::env::var("PROJECTKIT_STORAGE_PATH")
+        .unwrap_or_else(|_| "./storage".to_string());
+    
+    let storage = StorageService::new(&storage_base_path)
+        .await
+        .expect("Failed to initialize storage service");
+    
+    println!("💾 Storage initialized at: {}", storage_base_path);
+    
+    // Connect third database instance for storage service
+    let db_for_storage = Database::connect(&config.database.url)
+        .await
+        .expect("Failed to connect to database for storage");
+    
+    let storage_service = TransactionalStorageService::new(storage, db_for_storage);
+    
     // Create app state
-    let state = Arc::new(AppState::new(db, auth_service));
+    let state = Arc::new(AppState::new(db, auth_service, storage_service));
     
     // Create router with state
     let app = router::router(state);

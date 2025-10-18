@@ -4,12 +4,13 @@ A full-stack Rust application framework with authentication, database ORM, and R
 
 ## Features
 
-- 🔐 **Authentication** - JWT-based auth with bcrypt password hashing
+- 🔐 **Authentication** - JWT-based auth with Argon2 password hashing
 - 🗄️ **Custom ORM** - Type-safe database operations with SQLite and MySQL support
 - 🔄 **Migrations** - Automatic database migrations on startup
 - ⚙️ **Configuration** - TOML-based config with environment variable overrides
 - 🚀 **REST API** - Built with Axum for high performance
 - 📦 **Modular Architecture** - Clean separation of concerns
+- 📁 **File Storage** - Transactional file upload/download with database tracking
 
 ## Quick Start
 
@@ -70,6 +71,7 @@ projectkit/
 │   ├── api/          # HTTP handlers and routing
 │   ├── auth/         # Authentication service
 │   ├── core/         # Configuration and shared utilities
+│   ├── storage/      # File storage service with ORM integration
 │   └── server/       # Main server binary and migrations
 ├── orm/              # Custom ORM library (workspace dependency)
 ├── projectkit.toml   # Configuration file
@@ -91,6 +93,7 @@ Override any configuration value using environment variables with the `PROJECTKI
 export PROJECTKIT_DATABASE_URL="postgres://user:pass@localhost:5432/projectkit"
 export PROJECTKIT_AUTH_JWT_SECRET="my-production-secret"
 export PROJECTKIT_SERVER_PORT=8080
+export PROJECTKIT_STORAGE_PATH="./uploads"  # Optional, defaults to ./storage
 ```
 
 Environment variables take precedence over the TOML file.
@@ -100,6 +103,18 @@ Environment variables take precedence over the TOML file.
 - **SQLite** - `sqlite:path/to/db.db` or `sqlite::memory:`
 - **MySQL** - `mysql://user:pass@host:port/dbname`
 - **PostgreSQL** - `postgres://user:pass@host:port/dbname` (coming soon)
+
+## File Storage
+
+The storage service provides transactional file management with database tracking:
+
+- **Upload files** - Multipart form data upload with automatic metadata persistence
+- **Download files** - Permission-checked file retrieval
+- **Delete files** - Transactional deletion (removes both file and database record)
+- **List files** - Query user's uploaded files
+- **Storage stats** - Track total file count and storage usage per user
+
+Files are stored on the local filesystem with metadata tracked in the database. The service uses a compensating transaction pattern to ensure consistency between filesystem and database operations.
 
 ## Migrations
 

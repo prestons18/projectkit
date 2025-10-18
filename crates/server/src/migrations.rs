@@ -118,6 +118,51 @@ impl Migration for CreatePostsTable {
     }
 }
 
+/// Migration to create files table
+struct CreateFilesTable;
+
+#[async_trait]
+impl Migration for CreateFilesTable {
+    fn name(&self) -> &str {
+        "create_files_table"
+    }
+
+    fn version(&self) -> i64 {
+        20241018_000004
+    }
+
+    async fn up(&self, schema: &mut Schema) -> Result<()> {
+        schema.create_table("files", |table| {
+            table.string("id", 36); // UUID primary key
+            table.big_integer("user_id");
+            table.string("original_name", 255);
+            table.string("stored_name", 255);
+            table.big_integer("size");
+            table.string("mime_type", 100);
+            table.string("storage_path", 500);
+            table.string("created_at", 50);
+            
+            table.foreign_key(ForeignKey {
+                column: "user_id".to_string(),
+                references_table: "users".to_string(),
+                references_column: "id".to_string(),
+                on_delete: Some(ForeignKeyAction::Cascade),
+                on_update: None,
+            });
+            
+            table.index("idx_files_id", vec!["id".to_string()], true);
+            table.index("idx_files_user_id", vec!["user_id".to_string()], false);
+            table.index("idx_files_created_at", vec!["created_at".to_string()], false);
+        });
+        Ok(())
+    }
+
+    async fn down(&self, schema: &mut Schema) -> Result<()> {
+        schema.drop_table("files");
+        Ok(())
+    }
+}
+
 /// Run all migrations silently
 /// Returns true if any migrations were run
 pub async fn run_migrations(backend: &dyn Backend, dialect: Dialect) -> Result<bool> {
@@ -127,6 +172,7 @@ pub async fn run_migrations(backend: &dyn Backend, dialect: Dialect) -> Result<b
     runner.add_migration(Box::new(CreateUsersTable));
     runner.add_migration(Box::new(CreateSessionsTable));
     runner.add_migration(Box::new(CreatePostsTable));
+    runner.add_migration(Box::new(CreateFilesTable));
     
     // Run pending migrations - this will print output only if migrations are executed
     runner.run_pending(backend).await?;

@@ -219,11 +219,109 @@ If you don't have the required role, you'll receive a `403 Forbidden` response:
 }
 ```
 
+## File Storage
+
+### POST /files/upload
+Upload a file (requires authentication).
+
+**Request:**
+```bash
+curl -X POST http://localhost:3000/files/upload \
+  -H "Authorization: Bearer <TOKEN>" \
+  -F "file=@/path/to/file.pdf"
+```
+
+**Response (201 Created):**
+```json
+{
+  "success": true,
+  "file": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "original_name": "file.pdf",
+    "stored_name": "550e8400-e29b-41d4-a716-446655440000.pdf",
+    "size": 102400,
+    "mime_type": "application/pdf",
+    "created_at": "2025-10-18T03:00:00Z"
+  }
+}
+```
+
+### GET /files/:id
+Download a file (requires authentication and ownership).
+
+**Request:**
+```bash
+curl http://localhost:3000/files/550e8400-e29b-41d4-a716-446655440000 \
+  -H "Authorization: Bearer <TOKEN>" \
+  -o downloaded_file.pdf
+```
+
+**Response:**
+- Binary file data with appropriate `Content-Type` and `Content-Disposition` headers
+
+### DELETE /files/:id
+Delete a file (requires authentication and ownership).
+
+**Request:**
+```bash
+curl -X DELETE http://localhost:3000/files/550e8400-e29b-41d4-a716-446655440000 \
+  -H "Authorization: Bearer <TOKEN>"
+```
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "message": "File 550e8400-e29b-41d4-a716-446655440000 deleted successfully"
+}
+```
+
+### GET /files
+List all files for the authenticated user.
+
+**Request:**
+```bash
+curl http://localhost:3000/files \
+  -H "Authorization: Bearer <TOKEN>"
+```
+
+**Response (200 OK):**
+```json
+[
+  {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "original_name": "document.pdf",
+    "stored_name": "550e8400-e29b-41d4-a716-446655440000.pdf",
+    "size": 102400,
+    "mime_type": "application/pdf",
+    "created_at": "2025-10-18T03:00:00Z"
+  }
+]
+```
+
+### GET /files/stats
+Get storage statistics for the authenticated user.
+
+**Request:**
+```bash
+curl http://localhost:3000/files/stats \
+  -H "Authorization: Bearer <TOKEN>"
+```
+
+**Response (200 OK):**
+```json
+{
+  "file_count": 5,
+  "total_size": 512000
+}
+```
+
 ## Database Setup
 
 The server automatically runs migrations on startup, creating the necessary tables:
 - `users` - For authentication (includes role column)
 - `posts` - Example table with foreign key to users
+- `files` - For file storage metadata with user ownership
 - `migrations` - Tracks applied migrations
 
 You can add custom migrations in `crates/server/src/migrations.rs`.
@@ -251,6 +349,19 @@ CREATE TABLE sessions (
     expires_at TEXT NOT NULL,
     created_at TEXT NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+-- Files table (for file storage)
+CREATE TABLE files (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    original_name TEXT NOT NULL,
+    stored_name TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    mime_type TEXT,
+    storage_path TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 ```
 

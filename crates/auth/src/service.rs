@@ -68,15 +68,51 @@ impl AuthService {
         query_builder.insert_into(User::table_name(), &columns);
         query_builder.values_params(&query_values);
         
-        let sql = query_builder.build()
-            .map_err(|e| AuthError::TokenGenerationError(format!("Query build error: {}", e)))?;
-        
-        let _rows_affected = backend.execute(&sql, query_builder.params()).await
-            .map_err(|e| AuthError::TokenGenerationError(format!("Database error: {}", e)))?;
-
-        // For now, we'll need to query back to get the ID
-        // TODO: Use RETURNING clause for SQLite or LAST_INSERT_ID() for MySQL
-        user.id = Some(1); // Placeholder - in production, query the last insert ID properly
+        // Use RETURNING clause for SQLite or LAST_INSERT_ID() for MySQL
+        if backend.supports_feature(orm::backend::BackendFeature::Returning) {
+            // SQLite: Use RETURNING clause
+            query_builder.returning(&["id", "email", "password_hash", "role", "created_at", "updated_at"]);
+            let sql = query_builder.build()
+                .map_err(|e| AuthError::TokenGenerationError(format!("Query build error: {}", e)))?;
+            
+            let result = backend.fetch_one_params(&sql, query_builder.params()).await
+                .map_err(|e| AuthError::TokenGenerationError(format!("Database error: {}", e)))?;
+            
+            match result {
+                Some(json) => {
+                    user = User::from_json(&json)
+                        .map_err(|e| AuthError::TokenGenerationError(format!("Deserialization error: {}", e)))?;
+                }
+                None => return Err(AuthError::TokenGenerationError("Failed to create user".to_string())),
+            }
+        } else {
+            // MySQL: Execute insert, then fetch LAST_INSERT_ID()
+            let sql = query_builder.build()
+                .map_err(|e| AuthError::TokenGenerationError(format!("Query build error: {}", e)))?;
+            
+            backend.execute(&sql, query_builder.params()).await
+                .map_err(|e| AuthError::TokenGenerationError(format!("Database error: {}", e)))?;
+            
+            // Get the last inserted ID
+            let last_id_sql = "SELECT LAST_INSERT_ID() as id";
+            #[allow(deprecated)]
+            let result = backend.fetch_one(last_id_sql).await
+                .map_err(|e| AuthError::TokenGenerationError(format!("Failed to get last insert ID: {}", e)))?;
+            
+            match result {
+                Some(json) => {
+                    let id = json.get("id")
+                        .and_then(|v| v.as_i64())
+                        .ok_or_else(|| AuthError::TokenGenerationError("Invalid ID returned".to_string()))?;
+                    user.id = Some(id);
+                    
+                    // Fetch the complete user record
+                    user = self.find_user_by_id(id).await?
+                        .ok_or_else(|| AuthError::TokenGenerationError("Failed to fetch created user".to_string()))?;
+                }
+                None => return Err(AuthError::TokenGenerationError("Failed to get last insert ID".to_string())),
+            }
+        }
 
         Ok(user)
     }
@@ -236,6 +272,11 @@ impl AuthService {
             .map_err(|e| AuthError::TokenValidationError(format!("Database error: {}", e)))?;
 
         Ok(rows_affected)
+    }
+    
+    /// Get the database backend (for seeding and admin operations)
+    pub fn db_backend(&self) -> &dyn orm::backend::Backend {
+        self.db.backend()
     }
 }
 
