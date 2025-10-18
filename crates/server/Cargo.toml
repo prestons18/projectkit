@@ -7,3 +7,7 @@ edition = "2024"
 tokio = { version = "1.48.0", features = ["full"] }
 api = { path = "../api" }
 axum = "0.8.6"
+auth = { path = "../auth" }
+projectkit_core = { path = "../core", package = "core" }
+orm = { workspace = true }
+async-trait = "0.1.89"

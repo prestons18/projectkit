@@ -1,0 +1,17 @@
+# Project Kit Configuration
+
+[database]
+# Database connection URL
+# Supported: sqlite:path/to/db.db, postgres://user:pass@host:port/dbname, mysql://user:pass@host:port/dbname
+url = "sqlite:projectkit.db"
+
+[auth]
+# JWT secret key for token signing (change in production!)
+jwt_secret = "super-secret-key-change-in-production"
+# Token expiry time in seconds (default: 3600 = 1 hour)
+token_expiry_seconds = 3600
+
+[server]
+# Server host and port
+host = "0.0.0.0"
+port = 3000

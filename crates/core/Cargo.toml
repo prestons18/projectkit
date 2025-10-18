@@ -5,3 +5,6 @@ edition = "2024"
 
 [dependencies]
 orm = { workspace = true }
+config = "0.15.18"
+serde = { version = "1.0.228", features = ["derive"] }
+toml = "0.9.8"
